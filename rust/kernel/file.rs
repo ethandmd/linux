@@ -886,3 +886,51 @@ pub trait Operations {
         Ok(bindings::POLLIN | bindings::POLLOUT | bindings::POLLRDNORM | bindings::POLLWRNORM)
     }
 }
+
+/// Provides a way to create anonymous inodes.
+pub struct AnonInode<T: Operations> {
+    _phantom: core::marker::PhantomData<T>,
+    //open_data: MaybeUninit<T::OpenData>,
+}
+
+impl <T: Operations> AnonInode<T> {
+    /// Allocate an anonymous inode with `data` and install `fd` in the current process.
+    pub fn register(
+        fd: FileDescriptorReservation,
+        name: core::fmt::Arguments<'_>,
+        data: T::OpenData,
+        flags: u32 // flags mod
+    ) -> Result {
+        // SAFETY: The adapter is compatible with anon_inode_getfile().
+        let fops = unsafe { OperationsVtable::<Self, T>::build() };
+        let name = crate::str::CString::try_from_fmt(name)?;
+        let dptr = &data as *const T::OpenData as *mut core::ffi::c_void;
+        let file = unsafe { bindings::anon_inode_getfile(name.as_char_ptr(), &*fops, dptr, flags.try_into()?) };
+        if file.is_null() {
+            // TODO: Err(bindings::PTR_ERR(file))
+            Err(EINVAL)
+        } else {
+            // SAFETY: File pointer is valid.
+            fd.commit(unsafe { File::from_ptr(file).into() });
+            Ok(())
+        }
+    } 
+}
+
+//impl<T: Operations> Into<ARef<File>> for AnonInode<T> {}
+
+impl<T: Operations> OpenAdapter<T::OpenData> for AnonInode<T> {
+    unsafe fn convert(
+        _inode: *mut bindings::inode,
+        file: *mut bindings::file,
+    ) -> *const T::OpenData {
+        // SAFETY:
+        let data = unsafe { (*file).private_data };
+        if data.is_null() { 
+            crate::pr_info!("Null data from conversion");
+        } else {
+            crate::pr_info!("Data ptr from conversion: {}", data as usize);
+        }
+        data as *const T::OpenData
+    }
+}

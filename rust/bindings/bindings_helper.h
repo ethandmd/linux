@@ -6,6 +6,7 @@
  * Sorted alphabetically.
  */
 
+#include <linux/anon_inodes.h>
 #include <kunit/test.h>
 #include <linux/amba/bus.h>
 #include <linux/cdev.h>
