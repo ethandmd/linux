@@ -890,7 +890,6 @@ pub trait Operations {
 /// Provides a way to create anonymous inodes.
 pub struct AnonInode<T: Operations> {
     _phantom: core::marker::PhantomData<T>,
-    //open_data: MaybeUninit<T::OpenData>,
 }
 
 impl <T: Operations> AnonInode<T> {
@@ -898,14 +897,17 @@ impl <T: Operations> AnonInode<T> {
     pub fn register(
         fd: FileDescriptorReservation,
         name: core::fmt::Arguments<'_>,
-        data: T::OpenData,
+        data: *mut core::ffi::c_void, //T::OpenData,
         flags: u32 // flags mod
     ) -> Result {
         // SAFETY: The adapter is compatible with anon_inode_getfile().
         let fops = unsafe { OperationsVtable::<Self, T>::build() };
         let name = crate::str::CString::try_from_fmt(name)?;
-        let dptr = &data as *const T::OpenData as *mut core::ffi::c_void;
-        let file = unsafe { bindings::anon_inode_getfile(name.as_char_ptr(), &*fops, dptr, flags.try_into()?) };
+        //let dptr = &data as *const T::OpenData as *mut core::ffi::c_void;
+        //let dptr = data.into_foreign() as *mut core::ffi::c_void;
+        // SAFETY: TODO!
+        //let data = unsafe { data as *mut core::ffi::c_void };
+        let file = unsafe { bindings::anon_inode_getfile(name.as_char_ptr(), &*fops, data, flags.try_into()?) };
         if file.is_null() {
             // TODO: Err(bindings::PTR_ERR(file))
             Err(EINVAL)
