@@ -12,6 +12,7 @@ use crate::{
     io_buffer::{IoBufferReader, IoBufferWriter},
     iov_iter::IovIter,
     mm,
+    str,
     sync::CondVar,
     types::ForeignOwnable,
     user_ptr::{UserSlicePtr, UserSlicePtrReader, UserSlicePtrWriter},
@@ -19,6 +20,8 @@ use crate::{
 };
 use core::convert::{TryFrom, TryInto};
 use core::{cell::UnsafeCell, marker, mem, ptr};
+use core::ffi;
+use core::fmt;
 use macros::vtable;
 
 /// Flags associated with a [`File`].
@@ -896,17 +899,17 @@ impl <T: Operations> AnonInode<T> {
     /// Allocate an anonymous inode with `data` and install `fd` in the current process.
     pub fn register(
         fd: FileDescriptorReservation,
-        name: core::fmt::Arguments<'_>,
-        data: *mut core::ffi::c_void, //T::OpenData,
+        name: fmt::Arguments<'_>,
+        data: *mut ffi::c_void, //T::OpenData,
         flags: u32 // flags mod
     ) -> Result {
         // SAFETY: The adapter is compatible with anon_inode_getfile().
         let fops = unsafe { OperationsVtable::<Self, T>::build() };
-        let name = crate::str::CString::try_from_fmt(name)?;
-        //let dptr = &data as *const T::OpenData as *mut core::ffi::c_void;
-        //let dptr = data.into_foreign() as *mut core::ffi::c_void;
-        // SAFETY: TODO!
-        //let data = unsafe { data as *mut core::ffi::c_void };
+        let name = str::CString::try_from_fmt(name)?;
+        if data.is_null() {
+            return Err(EINVAL);
+        }
+        // SAFETY: Data ptr is valid, ffi call.
         let file = unsafe { bindings::anon_inode_getfile(name.as_char_ptr(), &*fops, data, flags.try_into()?) };
         if file.is_null() {
             // TODO: Err(bindings::PTR_ERR(file))
@@ -919,20 +922,13 @@ impl <T: Operations> AnonInode<T> {
     } 
 }
 
-//impl<T: Operations> Into<ARef<File>> for AnonInode<T> {}
-
 impl<T: Operations> OpenAdapter<T::OpenData> for AnonInode<T> {
     unsafe fn convert(
         _inode: *mut bindings::inode,
         file: *mut bindings::file,
     ) -> *const T::OpenData {
-        // SAFETY:
-        let data = unsafe { (*file).private_data };
-        if data.is_null() { 
-            crate::pr_info!("Null data from conversion");
-        } else {
-            crate::pr_info!("Data ptr from conversion: {}", data as usize);
-        }
+        // SAFETY: Caller's responsibility to make sure file is valid.
+        let data = unsafe { (*file).private_data }; 
         data as *const T::OpenData
     }
 }
