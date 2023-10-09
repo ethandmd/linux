@@ -7,6 +7,7 @@
  */
 
 #include <linux/anon_inodes.h>
+#include <linux/mm.h>
 #include <kunit/test.h>
 #include <linux/amba/bus.h>
 #include <linux/cdev.h>
